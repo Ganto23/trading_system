@@ -5,9 +5,10 @@
 #include <cstdint>
 #include <algorithm>
 #include <shared_mutex>
+#include <mutex>
 #include <chrono>
 #include <atomic>
-#include "pool_allocator.h" // Use your custom PoolAllocator implementation
+#include "pool_allocator.cpp" // Use your custom PoolAllocator implementation
 
 enum class OrderStatus { Open, Filled, Canceled, NotFound };
 
@@ -40,7 +41,7 @@ public:
     std::map<double, PriceLevel, std::less<double>> asks;    // Lowest price first
 
     // Multiple pools for dynamic expansion
-    std::vector<PoolAllocator<Order>*> pools;
+    std::vector<PoolAllocator<Order, 1024>*> pools;
     size_t current_pool = 0;
 
     // Lookup for all orders by ID
@@ -57,8 +58,8 @@ public:
 
     std::atomic<uint64_t> next_order_id = 1;
 
-    OrderBook(size_t initial_pool_size = 1024) {
-        pools.push_back(new PoolAllocator<Order>(initial_pool_size));
+    OrderBook() {
+        pools.push_back(new PoolAllocator<Order, 1024>());
     }
 
     ~OrderBook() {
@@ -67,12 +68,11 @@ public:
 
     // Create a new order using the latest pool allocator
     Order* createOrder(uint64_t id, double price, uint32_t quantity, bool is_buy) {
-        PoolAllocator<Order>* allocator = pools[current_pool];
+        PoolAllocator<Order, 1024>* allocator = pools[current_pool];
         Order* order = allocator->allocate();
         if (!order) {
-            // Pool full, create a new pool (double size)
-            size_t new_size = allocator->getPoolSize() * 2;
-            pools.push_back(new PoolAllocator<Order>(new_size));
+            // Pool full, create a new pool (same size for template compatibility)
+            pools.push_back(new PoolAllocator<Order, 1024>());
             current_pool++;
             allocator = pools[current_pool];
             order = allocator->allocate();
@@ -120,12 +120,12 @@ public:
         Order* order = createOrder(id, price, quantity, is_buy);
         if (!order) return 0;
         if (is_buy) {
-            std::unique_lock bids_lock(bids_mutex);
+            std::unique_lock<std::shared_mutex> bids_lock(bids_mutex);
             auto& level = bids[price];
             level.orders.push_back(order);
             level.id_map[order->id] = std::prev(level.orders.end());
         } else {
-            std::unique_lock asks_lock(asks_mutex);
+            std::unique_lock<std::shared_mutex> asks_lock(asks_mutex);
             auto& level = asks[price];
             level.orders.push_back(order);
             level.id_map[order->id] = std::prev(level.orders.end());
@@ -136,9 +136,10 @@ public:
 
     // Cancel an order by ID
     bool cancelOrder(uint64_t id) {
+        Order* order = nullptr;
         {
         std::unique_lock lookup_lock(order_lookup_mutex);
-        Order* order = getOrderById(id);
+        order = getOrderById(id);
         if (!order || order->status != OrderStatus::Open) return false;
         order->status = OrderStatus::Canceled;
         }
@@ -151,20 +152,25 @@ public:
     bool modifyOrder(uint64_t id, double new_price, uint32_t new_quantity) {
         // Value range validation
         if (new_price <= 0 || new_quantity == 0) return false;
+        Order* order = nullptr;
         {
-        std::unique_lock lookup_lock(order_lookup_mutex);
-        Order* order = getOrderById(id);
-        if (!order || order->status != OrderStatus::Open) return false;
+            std::unique_lock<std::shared_mutex> lookup_lock(order_lookup_mutex);
+            order = getOrderById(id);
+            if (!order || order->status != OrderStatus::Open) return false;
         }
         removeOrderFromBook(order);
         order->price = new_price;
         order->quantity = new_quantity;
         if (order->is_buy) {
-            std::unique_lock bids_lock(bids_mutex);
-            bids[new_price].push_back(order);
+            std::unique_lock<std::shared_mutex> bids_lock(bids_mutex);
+            auto& level = bids[new_price];
+            level.orders.push_back(order);
+            level.id_map[order->id] = std::prev(level.orders.end());
         } else {
-            std::unique_lock asks_lock(asks_mutex);
-            asks[new_price].push_back(order);
+            std::unique_lock<std::shared_mutex> asks_lock(asks_mutex);
+            auto& level = asks[new_price];
+            level.orders.push_back(order);
+            level.id_map[order->id] = std::prev(level.orders.end());
         }
         matchOrders(getUnixTimestamp()); // Call matching after modify with real timestamp
         return true;
@@ -269,7 +275,7 @@ private:
 
     void removeOrderFromBook(Order* order) {
         if (order->is_buy) {
-            std::unique_lock bids_lock(bids_mutex);
+            std::unique_lock<std::shared_mutex> bids_lock(bids_mutex);
             auto it = bids.find(order->price);
             if (it != bids.end()) {
                 auto& level = it->second;
@@ -281,7 +287,7 @@ private:
                 if (level.orders.empty()) bids.erase(it);
             }
         } else {
-            std::unique_lock asks_lock(asks_mutex);
+            std::unique_lock<std::shared_mutex> asks_lock(asks_mutex);
             auto it = asks.find(order->price);
             if (it != asks.end()) {
                 auto& level = it->second;
