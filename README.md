@@ -23,22 +23,62 @@ High-performance, thread-safe C++ trading system with real-time WebSocket API, c
 
 ### Build Instructions
 
+
 1. **Clone the repository:**
-	```bash
-	git clone <your-repo-url>
-	cd trading_system
-	```
+	 ```bash
+	 git clone <your-repo-url>
+	 cd trading_system
+	 ```
+
 2. **Install dependencies:**
-	- uWebSockets: Build from source or use Homebrew
-	- nlohmann/json: `brew install nlohmann-json` or download `json.hpp`
+
+### Dependency Installation
+
+#### uWebSockets (v20+)
+- **Option 1: Build from source**
+	```bash
+	git clone https://github.com/uNetworking/uWebSockets.git
+	cd uWebSockets
+	make
+	```
+	Then move the folder to `libs/uWebSockets` in your project.
+
+- **Option 2: Homebrew (macOS)**
+	```bash
+	brew install uwebsockets
+	```
+	Add `/opt/homebrew/include` to your include path.
+
+#### nlohmann/json
+- **Option 1: Homebrew (macOS)**
+	```bash
+	brew install nlohmann-json
+	```
+- **Option 2: Manual download**
+	Download [`json.hpp`](https://github.com/nlohmann/json/releases) and place it in `libs/nlohmann/json.hpp`.
+	Add `-Ilibs/nlohmann` to your build command.
+
+#### zlib
+- **macOS:** Already included.
+- **Linux:** Install with your package manager, e.g.:
+	```bash
+	sudo apt-get install zlib1g-dev
+	```
+
+**Note:**
+Do **not** commit third-party libraries (`libs/uWebSockets`, `libs/nlohmann`) to your repository.
+Add them to `.gitignore` and document installation steps here.
+
+
 3. **Build the server:**
 	```bash
-	g++ -std=c++17 \
-		 -Ilibs/uWebSockets/src \
-		 -Ilibs/uWebSockets/uSockets/src \
-		 -I/opt/homebrew/include \
-		 websocket.cpp libs/uWebSockets/uSockets/*.o -o trading_server -lz
+	make
 	```
+
+To clean build artifacts:
+```bash
+make clean
+```
 
 ## Usage
 
@@ -81,6 +121,7 @@ Connect via WebSocket (port 9001) and use JSON messages to:
 - `websocket.cpp` — WebSocket server and API
 - `libs/uWebSockets/` — uWebSockets source and build
 - `.vscode/` — VS Code configuration
+- [`Makefile`](Makefile) — Build configuration
 
 ## Contributing
 
