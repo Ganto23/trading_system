@@ -92,19 +92,63 @@ Interact with the trading system via WebSocket (default port: **9001**). All mes
 ```
 ## WebSocket API
 
-### Authentication
+### Endpoint Summary Table
 
-Authenticate with a token:
+| Endpoint Type         | Request Example                      | Response Example / Description                |
+|----------------------|--------------------------------------|-----------------------------------------------|
+| Authenticate         | `{ "type": "auth", "token": "..." }` | `{ "type": "auth_response", "success": true }` |
+| Submit Order         | `{ "type": "submit", "price": 101.5, "qty": 10, "is_buy": true }` | `{ "type": "submit_response", "success": true, "id": 12345 }` |
+| Cancel Order         | `{ "type": "cancel", "id": 12345 }` | `{ "type": "cancel_response", "success": true }` |
+| Modify Order         | `{ "type": "modify", "id": 12345, "price": 102.0, "qty": 5 }` | `{ "type": "modify_response", "success": true }` |
+| Get Order Status     | `{ "type": "getOrderStatus", "id": 12345 }` | `{ "type": "order_status_response", "id": 12345, "status": 0 }` |
+| Get Order Book       | `{ "type": "getOrderBookSnapshot" }` | `{ "type": "order_book_snapshot_response", "bids": [...], "asks": [...] }` |
+| Get Trade History    | `{ "type": "getTradeHistory" }` | `{ "type": "trade_history_response", "trades": [...] }` |
+| Get Open Orders      | `{ "type": "getOpenOrdersCount" }` | `{ "type": "open_orders_count_response", "count": 2 }` |
+| Get Realized PnL     | `{ "type": "getRealizedPnL" }` | `{ "type": "realized_pnl_response", "pnl": 15.25 }` |
+| Get Unrealized PnL   | `{ "type": "getUnrealizedPnL" }` | `{ "type": "unrealized_pnl_response", "pnl": -3.50 }` |
 
+---
+
+### Error Response Examples
+
+#### Invalid Token
+```json
+{
+  "type": "auth_response",
+  "success": false,
+  "message": "Invalid token"
+}
+```
+
+#### Insufficient Quantity
+```json
+{
+  "type": "submit_response",
+  "success": false,
+  "message": "Quantity must be greater than zero"
+}
+```
+
+#### Missing Required Fields
+```json
+{
+  "type": "error",
+  "message": "Missing required fields for submit"
+}
+```
+
+---
+
+### Endpoint Details
+
+#### Authenticate
 ```json
 {
   "type": "auth",
   "token": "your_secret_token"
 }
 ```
-
 Response:
-
 ```json
 {
   "type": "auth_response",
@@ -112,10 +156,7 @@ Response:
 }
 ```
 
-### Order Actions
-
 #### Submit Order
-
 ```json
 {
   "type": "submit",
@@ -124,9 +165,7 @@ Response:
   "is_buy": true
 }
 ```
-
 Response:
-
 ```json
 {
   "type": "submit_response",
@@ -136,16 +175,13 @@ Response:
 ```
 
 #### Cancel Order
-
 ```json
 {
   "type": "cancel",
   "id": 12345
 }
 ```
-
 Response:
-
 ```json
 {
   "type": "cancel_response",
@@ -154,7 +190,6 @@ Response:
 ```
 
 #### Modify Order
-
 ```json
 {
   "type": "modify",
@@ -163,9 +198,7 @@ Response:
   "qty": 5
 }
 ```
-
 Response:
-
 ```json
 {
   "type": "modify_response",
@@ -174,16 +207,13 @@ Response:
 ```
 
 #### Get Order Status
-
 ```json
 {
   "type": "getOrderStatus",
   "id": 12345
 }
 ```
-
 Response:
-
 ```json
 {
   "type": "order_status_response",
@@ -193,15 +223,12 @@ Response:
 ```
 
 #### Get Order Book Snapshot
-
 ```json
 {
   "type": "getOrderBookSnapshot"
 }
 ```
-
 Response:
-
 ```json
 {
   "type": "order_book_snapshot_response",
@@ -211,21 +238,68 @@ Response:
 ```
 
 #### Get Trade History
-
 ```json
 {
   "type": "getTradeHistory"
 }
 ```
-
 Response:
-
 ```json
 {
   "type": "trade_history_response",
   "trades": [ ... ]
 }
 ```
+
+#### Get Open Orders Count
+```json
+{
+  "type": "getOpenOrdersCount"
+}
+```
+Response:
+```json
+{
+  "type": "open_orders_count_response",
+  "count": 2
+}
+```
+
+#### Get Realized PnL
+```json
+{
+  "type": "getRealizedPnL"
+}
+```
+Response:
+```json
+{
+  "type": "realized_pnl_response",
+  "pnl": 15.25
+}
+```
+
+#### Get Unrealized PnL
+```json
+{
+  "type": "getUnrealizedPnL"
+}
+```
+Response:
+```json
+{
+  "type": "unrealized_pnl_response",
+  "pnl": -3.50
+}
+```
+
+---
+
+### Realized vs. Unrealized PnL
+- **Realized PnL** is updated automatically when trades are executed (order fills).
+- **Unrealized PnL** is calculated on demand using current best bid/ask prices for open orders.
+
+Both metrics are available per user via the API endpoints above.
 
 ---
 
