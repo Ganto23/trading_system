@@ -48,11 +48,11 @@ High-performance, thread-safe C++ trading system with real-time WebSocket API, c
 Example build command:
 
 ```sh
-g++ -std=c++17 \
-	-Ilibs/uWebSockets/src \
-	-Ilibs/uWebSockets/uSockets/src \
-	-I/opt/homebrew/include \
-	websocket.cpp order-book.cpp libs/uWebSockets/uSockets/*.o -o trading_server -lz
+g++ -std=c++17 \                                    
+    -Ilibs/uWebSockets/src \
+    -Ilibs/uWebSockets/uSockets/src \
+    -I/opt/homebrew/include \
+    websocket.cpp order-book.cpp libs/uWebSockets/uSockets/*.o -o trading_server -lz
 ```
 - **Linux:** Install with your package manager, e.g.:
 	```bash
