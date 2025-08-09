@@ -56,6 +56,8 @@ public:
 
     // Lookup for all orders by ID
     std::unordered_map<uint64_t, Order*> order_lookup;
+    // Final status archive for orders that have been removed from memory (filled/canceled)
+    std::unordered_map<uint64_t, OrderStatus> final_status_archive;
 
     // Trade history log
     std::vector<Trade> trade_history;
@@ -77,6 +79,8 @@ public:
 
     // Realized PnL update callback
     std::function<void(uint64_t, bool, double, uint32_t)> onTradePnLUpdate = nullptr;
+    // Trade event callback (broadcast individual trade details externally)
+    std::function<void(const Trade&)> onTradeEvent = nullptr;
 
     void removeOrderFromBook(Order* order);
     void destroyOrder(Order* order);

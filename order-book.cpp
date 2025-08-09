@@ -31,7 +31,10 @@ Order* OrderBook::createOrder(uint64_t id, double price, uint32_t quantity, bool
     order->is_buy = is_buy;
     order->pool_index = current_pool;
     order->status = OrderStatus::Open;
-    order_lookup[id] = order;
+    {
+        std::unique_lock lk(order_lookup_mutex);
+        order_lookup[id] = order;
+    }
     return order;
 }
 
@@ -42,6 +45,8 @@ void OrderBook::destroyOrder(Order* order) {
     }
     {
         std::unique_lock lookup_lock(order_lookup_mutex);
+    // Archive final status for future status queries
+    final_status_archive[order->id] = order->status;
         order_lookup.erase(order->id);
     }
 }
@@ -112,8 +117,9 @@ bool OrderBook::cancelOrder(uint64_t id) {
     Order* order = nullptr;
     {
         std::unique_lock lookup_lock(order_lookup_mutex);
-        order = getOrderById(id);
-        if (!order || order->status != OrderStatus::Open) return false;
+        auto it = order_lookup.find(id);
+        if (it == order_lookup.end() || it->second->status != OrderStatus::Open) return false;
+        order = it->second;
         order->status = OrderStatus::Canceled;
     }
     removeOrderFromBook(order);
@@ -125,9 +131,10 @@ bool OrderBook::modifyOrder(uint64_t id, double new_price, uint32_t new_quantity
     if (new_price <= 0 || new_quantity == 0) return false;
     Order* order = nullptr;
     {
-        std::unique_lock<std::shared_mutex> lookup_lock(order_lookup_mutex);
-        order = getOrderById(id);
-        if (!order || order->status != OrderStatus::Open) return false;
+        std::unique_lock lookup_lock(order_lookup_mutex);
+        auto it = order_lookup.find(id);
+        if (it == order_lookup.end() || it->second->status != OrderStatus::Open) return false;
+        order = it->second;
     }
     removeOrderFromBook(order);
     order->price = new_price;
@@ -148,9 +155,14 @@ bool OrderBook::modifyOrder(uint64_t id, double new_price, uint32_t new_quantity
 }
 
 OrderStatus OrderBook::getOrderStatus(uint64_t id) {
-    std::shared_lock lock(order_lookup_mutex);
-    Order* order = getOrderById(id);
-    return order ? order->status : OrderStatus::NotFound;
+    {
+        std::shared_lock lock(order_lookup_mutex);
+        auto it = order_lookup.find(id);
+        if (it != order_lookup.end()) return it->second->status;
+    }
+    auto it = final_status_archive.find(id);
+    if (it != final_status_archive.end()) return it->second;
+    return OrderStatus::NotFound;
 }
 
 void OrderBook::getOrderBookSnapshot(std::vector<Order>& bid_snapshot, std::vector<Order>& ask_snapshot) {
@@ -209,6 +221,11 @@ void OrderBook::matchOrders(uint64_t timestamp) {
         {
             std::unique_lock trade_lock(trade_history_mutex);
             trade_history.push_back({buy_order->id, sell_order->id, trade_price, trade_qty, timestamp});
+        }
+        // Fire external trade event (before orders potentially destroyed)
+        if (onTradeEvent) {
+            Trade t{buy_order->id, sell_order->id, trade_price, trade_qty, timestamp};
+            onTradeEvent(t);
         }
         if (onTradePnLUpdate) {
             onTradePnLUpdate(buy_order->id, true, trade_price, trade_qty);
