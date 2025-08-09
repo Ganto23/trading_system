@@ -9,6 +9,7 @@
 #include "order-book.h"
 #include <unordered_set>
 #include <unordered_map>
+#include <vector>
 
 // Forward declare ClientData so we can define globals after
 struct ClientData;
@@ -16,6 +17,7 @@ struct ClientData;
 // Track all connected clients and map orders to owners
 static std::unordered_set<uWS::WebSocket<false, true, ClientData>*> connected_clients;
 static std::unordered_map<uint64_t, ClientData*> order_to_client; // moved global
+static std::vector<uint64_t> system_seed_orders; // track seeded liquidity order ids
 
 OrderBook orderBook; // Global instance
 
@@ -44,6 +46,27 @@ void broadcastOrderBookSnapshot() {
     }
     for (auto* client : connected_clients) {
         client->send(ob_resp.dump());
+    }
+}
+
+// Seed a symmetric price ladder if book is empty at startup.
+// These orders are owned by the system (no client association) and provide initial liquidity.
+void seedInitialBook(double mid_price = 100.0,
+                     double tick = 0.5,
+                     int levels_each_side = 5,
+                     uint32_t base_qty = 10) {
+    std::vector<Order> bids, asks;
+    orderBook.getOrderBookSnapshot(bids, asks);
+    if (!bids.empty() || !asks.empty()) {
+        return; // already populated, skip
+    }
+    for (int i = 1; i <= levels_each_side; ++i) {
+        double bid_price = mid_price - i * tick;
+        double ask_price = mid_price + i * tick;
+        uint64_t bid_id = orderBook.submitOrder(bid_price, base_qty, true);
+        uint64_t ask_id = orderBook.submitOrder(ask_price, base_qty, false);
+        if (bid_id) system_seed_orders.push_back(bid_id);
+        if (ask_id) system_seed_orders.push_back(ask_id);
     }
 }
 
@@ -96,6 +119,9 @@ double getUnrealizedPnL(const ClientData* client) {
 }
 
 int main() {
+    // Seed initial book liquidity before accepting clients (configurable defaults)
+    seedInitialBook(100.0, 0.5, 5, 10);
+
     uWS::App app;
 
     // Set realized PnL update callback (broadcast after each trade)
