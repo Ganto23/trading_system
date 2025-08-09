@@ -8,8 +8,14 @@
 #include <nlohmann/json.hpp> // Install with vcpkg or add to your project
 #include "order-book.h"
 #include <unordered_set>
-#include <unordered_set>
+#include <unordered_map>
+
+// Forward declare ClientData so we can define globals after
+struct ClientData;
+
+// Track all connected clients and map orders to owners
 static std::unordered_set<uWS::WebSocket<false, true, ClientData>*> connected_clients;
+static std::unordered_map<uint64_t, ClientData*> order_to_client; // moved global
 
 OrderBook orderBook; // Global instance
 
@@ -18,8 +24,8 @@ using json = nlohmann::json;
 struct ClientData {
     bool authenticated = false;
     std::unordered_set<uint64_t> my_orders;
-        double realized_pnl = 0.0;
-        double unrealized_pnl = 0.0;
+    double realized_pnl = 0.0;
+    double unrealized_pnl = 0.0;
 };
 
 void broadcastOrderBookSnapshot() {
@@ -50,7 +56,7 @@ size_t getOpenOrdersCount(const ClientData* client) {
         }
     }
     return count;
-};
+}
 // Helper function to get best bid (highest price)
 double getBestBid() {
     std::vector<Order> bid_snapshot, ask_snapshot;
@@ -90,12 +96,9 @@ double getUnrealizedPnL(const ClientData* client) {
 }
 
 int main() {
-    // Map order ID to ClientData* for PnL updates
-    static std::unordered_map<uint64_t, ClientData*> order_to_client;
-
     uWS::App app;
 
-    // Set realized PnL update callback
+    // Set realized PnL update callback (broadcast after each trade)
     orderBook.onTradePnLUpdate = [](uint64_t order_id, bool is_buy, double price, uint32_t qty) {
         auto it = order_to_client.find(order_id);
         if (it != order_to_client.end() && it->second) {
@@ -115,7 +118,7 @@ int main() {
         // Handle new client connection
         .open = [](auto* ws) {
             ws->getUserData()->authenticated = false;
-            ws->send(R"({\"type\":\"welcome\",\"message\":\"Please authenticate\"})");
+            ws->send(R"({"type":"welcome","message":"Please authenticate"})");
             connected_clients.insert(ws);
         },
         // Handle incoming messages
@@ -127,7 +130,7 @@ int main() {
 
                 // Authentication check
                 if (!ws->getUserData()->authenticated && type != "auth") {
-                    ws->send(R"({\"type\":\"error\",\"message\":\"Not authenticated\"})");
+                    ws->send(R"({"type":"error","message":"Not authenticated"})");
                     return;
                 }
 
@@ -242,29 +245,29 @@ int main() {
                         response["asks"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
                     }
                 } else if (type == "getTradeHistory") {
-                    } else if (type == "getRealizedPnL") {
-                        response = {
-                            {"type", "realized_pnl_response"},
-                            {"pnl", ws->getUserData()->realized_pnl}
-                        };
-                    } else if (type == "getUnrealizedPnL") {
-                        double pnl = getUnrealizedPnL(ws->getUserData());
-                        response = {
-                            {"type", "unrealized_pnl_response"},
-                            {"pnl", pnl}
-                        };
-                } else if (type == "getOpenOrdersCount") {
-                    size_t count = getOpenOrdersCount(ws->getUserData());
-                    response = {
-                        {"type", "open_orders_count_response"},
-                        {"count", count}
-                    };
                     const auto& trades = orderBook.getTradeHistory();
                     response["type"] = "trade_history_response";
                     response["trades"] = json::array();
                     for (const auto& t : trades) {
                         response["trades"].push_back({{"buy_order_id", t.buy_order_id}, {"sell_order_id", t.sell_order_id}, {"price", t.price}, {"quantity", t.quantity}, {"timestamp", t.timestamp}});
                     }
+                } else if (type == "getRealizedPnL") {
+                    response = {
+                        {"type", "realized_pnl_response"},
+                        {"pnl", ws->getUserData()->realized_pnl}
+                    };
+                } else if (type == "getUnrealizedPnL") {
+                    double pnl = getUnrealizedPnL(ws->getUserData());
+                    response = {
+                        {"type", "unrealized_pnl_response"},
+                        {"pnl", pnl}
+                    };
+                } else if (type == "getOpenOrdersCount") {
+                    size_t count = getOpenOrdersCount(ws->getUserData());
+                    response = {
+                        {"type", "open_orders_count_response"},
+                        {"count", count}
+                    };
                 } else {
                     response = {
                         {"type", "error"},
@@ -273,7 +276,7 @@ int main() {
                 }
                 ws->send(response.dump());
             } catch (const std::exception& e) {
-                ws->send(R"({\"type\":\"error\",\"message\":\"Invalid JSON or missing fields\"})");
+                ws->send(R"({"type":"error","message":"Invalid JSON or missing fields"})");
             }
         },
         // Handle client disconnect
