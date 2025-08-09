@@ -8,6 +8,8 @@
 #include <nlohmann/json.hpp> // Install with vcpkg or add to your project
 #include "order-book.h"
 #include <unordered_set>
+#include <unordered_set>
+static std::unordered_set<uWS::WebSocket<false, true, ClientData>*> connected_clients;
 
 OrderBook orderBook; // Global instance
 
@@ -19,6 +21,25 @@ struct ClientData {
         double realized_pnl = 0.0;
         double unrealized_pnl = 0.0;
 };
+
+void broadcastOrderBookSnapshot() {
+    std::vector<Order> bid_snapshot, ask_snapshot;
+    orderBook.getOrderBookSnapshot(bid_snapshot, ask_snapshot);
+    json ob_resp = {
+        {"type", "order_book_snapshot_response"},
+        {"bids", json::array()},
+        {"asks", json::array()}
+    };
+    for (const auto& o : bid_snapshot) {
+        ob_resp["bids"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
+    }
+    for (const auto& o : ask_snapshot) {
+        ob_resp["asks"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
+    }
+    for (auto* client : connected_clients) {
+        client->send(ob_resp.dump());
+    }
+}
 
 // Helper function to count open orders for a user
 size_t getOpenOrdersCount(const ClientData* client) {
@@ -88,12 +109,14 @@ int main() {
                 client->realized_pnl += pnl;
             }
         }
+        broadcastOrderBookSnapshot();
     };
     app.ws<ClientData>("/*", {
         // Handle new client connection
         .open = [](auto* ws) {
             ws->getUserData()->authenticated = false;
             ws->send(R"({\"type\":\"welcome\",\"message\":\"Please authenticate\"})");
+            connected_clients.insert(ws);
         },
         // Handle incoming messages
         .message = [](auto* ws, std::string_view msg, uWS::OpCode opCode) {
@@ -132,6 +155,7 @@ int main() {
                         if (ok) {
                             ws->getUserData()->my_orders.insert(id);
                             order_to_client[id] = ws->getUserData();
+                            broadcastOrderBookSnapshot();
                         }
                         response = {
                             {"type", "submit_response"},
@@ -157,6 +181,7 @@ int main() {
                                 if (ok) {
                                     ws->getUserData()->my_orders.erase(id);
                                     order_to_client.erase(id);
+                                    broadcastOrderBookSnapshot();
                                 }
                             }
                         }
@@ -180,7 +205,10 @@ int main() {
                             } else {
                                 bool ok = orderBook.modifyOrder(id, price, qty);
                                 response = {{"type", "modify_response"}, {"success", ok}};
-                                if (ok) order_to_client[id] = ws->getUserData();
+                                if (ok) {
+                                    order_to_client[id] = ws->getUserData();
+                                    broadcastOrderBookSnapshot();
+                                } 
                             }
                         }
                     }
@@ -255,6 +283,7 @@ int main() {
             for (auto id : ws->getUserData()->my_orders) {
                 order_to_client.erase(id);
             }
+            connected_clients.erase(ws);
         }
     }).listen("0.0.0.0", 9001, [](auto* listen_socket) {
         if (listen_socket) {
