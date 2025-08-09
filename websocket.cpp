@@ -2,7 +2,7 @@
 // You need to install uWebSockets and link it to your project.
 // This example assumes you have an OrderBook instance available.
 
-#include <uwebsockets/App.h>
+#include <uWebSockets/App.h>
 #include <iostream>
 #include <string>
 #include <nlohmann/json.hpp> // Install with vcpkg or add to your project
@@ -19,7 +19,8 @@ struct ClientData {
 };
 
 int main() {
-    uWS::App().ws<ClientData>("/*", {
+    uWS::App app;
+    app.ws<ClientData>("/*", {
         // Handle new client connection
         .open = [](auto* ws) {
             ws->getUserData()->authenticated = false;
@@ -158,9 +159,11 @@ int main() {
         .close = [](auto* ws, int code, std::string_view reason) {
             // Optional: log disconnects
         }
-    }).listen(9001, [](auto* token) {
-        if (token) {
-            std::cout << "WebSocket server listening on port 9001" << std::endl;
+    }).listen("0.0.0.0", 9001, [](auto* listen_socket) {
+        if (listen_socket) {
+            std::cout << "Listening on port 9001" << std::endl;
+        } else {
+            std::cout << "Failed to listen on port 9001" << std::endl;
         }
     }).run();
     return 0;

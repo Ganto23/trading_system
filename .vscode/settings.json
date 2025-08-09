@@ -54,5 +54,6 @@
         "variant": "cpp",
         "vector": "cpp",
         "algorithm": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/Users/godfreyantomarlin/Desktop/projects/trading_system/uWebSockets/libdeflate"
 }

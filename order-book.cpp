@@ -8,7 +8,7 @@
 #include <mutex>
 #include <chrono>
 #include <atomic>
-#include "pool_allocator.cpp" // Use your custom PoolAllocator implementation
+#include "pool_allocator.h" // Use your custom PoolAllocator implementation
 
 enum class OrderStatus { Open, Filled, Canceled, NotFound };
 
@@ -53,7 +53,7 @@ public:
     std::shared_mutex bids_mutex;
     std::shared_mutex asks_mutex;
     std::shared_mutex order_lookup_mutex;
-    std::shared_mutex trade_history_mutex;
+    mutable std::shared_mutex trade_history_mutex;
     std::shared_mutex pools_mutex;
 
     std::atomic<uint64_t> next_order_id = 1;
@@ -91,10 +91,11 @@ public:
         return order;
     }
 
-    void destroyOrder(Order* order) {
-        pools[order->pool_index]->deallocate(order);
-        order_lookup.erase(order->id);
-    }
+
+    //void destroyOrder(Order* order) {
+    //    pools[order->pool_index]->deallocate(order);
+    //    order_lookup.erase(order->id);
+    //}
 
     // Helper to get current Unix timestamp
     uint64_t getUnixTimestamp() const {
