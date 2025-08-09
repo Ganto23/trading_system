@@ -18,6 +18,17 @@ struct ClientData {
     std::unordered_set<uint64_t> my_orders;
 };
 
+// Helper function to count open orders for a user
+size_t getOpenOrdersCount(const ClientData* client) {
+    size_t count = 0;
+    for (auto id : client->my_orders) {
+        if (orderBook.getOrderStatus(id) == OrderStatus::Open) {
+            ++count;
+        }
+    }
+    return count;
+};
+
 int main() {
     uWS::App app;
     app.ws<ClientData>("/*", {
@@ -138,6 +149,12 @@ int main() {
                         response["asks"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
                     }
                 } else if (type == "getTradeHistory") {
+                } else if (type == "getOpenOrdersCount") {
+                    size_t count = getOpenOrdersCount(ws->getUserData());
+                    response = {
+                        {"type", "open_orders_count_response"},
+                        {"count", count}
+                    };
                     const auto& trades = orderBook.getTradeHistory();
                     response["type"] = "trade_history_response";
                     response["trades"] = json::array();
