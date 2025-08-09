@@ -7,7 +7,8 @@
                 "/usr/local/include",          // Homebrew default
                 "/opt/homebrew/include",       // Apple Silicon default
                 "/usr/local/include/uwebsockets",        // If you built manually
-                "/opt/homebrew/include/nlohmann"       // If you downloaded manually
+                "/opt/homebrew/include/nlohmann",       // If you downloaded manually
+                "libs/uWebSockets/src"
             ],
             "defines": [],
             "cStandard": "c17",
