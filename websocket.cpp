@@ -6,7 +6,7 @@
 #include <iostream>
 #include <string>
 #include <nlohmann/json.hpp> // Install with vcpkg or add to your project
-#include "order-book.cpp"
+#include "order-book.h"
 #include <unordered_set>
 
 OrderBook orderBook; // Global instance
