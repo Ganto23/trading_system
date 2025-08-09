@@ -10,6 +10,7 @@
 #include <unordered_set>
 
 OrderBook orderBook; // Global instance
+static std::unordered_set<uWS::WebSocket<false, true, ClientData>*> connected_clients;
 
 using json = nlohmann::json;
 
@@ -94,6 +95,7 @@ int main() {
         .open = [](auto* ws) {
             ws->getUserData()->authenticated = false;
             ws->send(R"({\"type\":\"welcome\",\"message\":\"Please authenticate\"})");
+            connected_clients.insert(ws);
         },
         // Handle incoming messages
         .message = [](auto* ws, std::string_view msg, uWS::OpCode opCode) {
@@ -139,6 +141,22 @@ int main() {
                             {"id", id}
                         };
                     }
+                    std::vector<Order> bid_snapshot, ask_snapshot;
+                    orderBook.getOrderBookSnapshot(bid_snapshot, ask_snapshot);
+                    json ob_resp = {
+                        {"type", "order_book_snapshot_response"},
+                        {"bids", json::array()},
+                        {"asks", json::array()}
+                    };
+                    for (const auto& o : bid_snapshot) {
+                        ob_resp["bids"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
+                    }
+                    for (const auto& o : ask_snapshot) {
+                        ob_resp["asks"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
+                    }
+                    for (auto* client : connected_clients) {
+                        client->send(ob_resp.dump());
+                    }
                 } else if (type == "cancel") {
                     // Check for required fields and types
                     if (!j.contains("id") || !j["id"].is_number_unsigned()) {
@@ -160,6 +178,22 @@ int main() {
                                 }
                             }
                         }
+                    }
+                    std::vector<Order> bid_snapshot, ask_snapshot;
+                    orderBook.getOrderBookSnapshot(bid_snapshot, ask_snapshot);
+                    json ob_resp = {
+                        {"type", "order_book_snapshot_response"},
+                        {"bids", json::array()},
+                        {"asks", json::array()}
+                    };
+                    for (const auto& o : bid_snapshot) {
+                        ob_resp["bids"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
+                    }
+                    for (const auto& o : ask_snapshot) {
+                        ob_resp["asks"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
+                    }
+                    for (auto* client : connected_clients) {
+                        client->send(ob_resp.dump());
                     }
                 } else if (type == "modify") {
                     // Check for required fields and types
@@ -183,6 +217,22 @@ int main() {
                                 if (ok) order_to_client[id] = ws->getUserData();
                             }
                         }
+                    }
+                    std::vector<Order> bid_snapshot, ask_snapshot;
+                    orderBook.getOrderBookSnapshot(bid_snapshot, ask_snapshot);
+                    json ob_resp = {
+                        {"type", "order_book_snapshot_response"},
+                        {"bids", json::array()},
+                        {"asks", json::array()}
+                    };
+                    for (const auto& o : bid_snapshot) {
+                        ob_resp["bids"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
+                    }
+                    for (const auto& o : ask_snapshot) {
+                        ob_resp["asks"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
+                    }
+                    for (auto* client : connected_clients) {
+                        client->send(ob_resp.dump());
                     }
                 } else if (type == "getOrderStatus") {
                     // Check for required fields and types
@@ -255,6 +305,7 @@ int main() {
             for (auto id : ws->getUserData()->my_orders) {
                 order_to_client.erase(id);
             }
+            connected_clients.erase(ws);
         }
     }).listen("0.0.0.0", 9001, [](auto* listen_socket) {
         if (listen_socket) {
