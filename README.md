@@ -12,7 +12,6 @@ High-performance, thread-safe C++ trading system with real-time WebSocket API, c
 - **Trade History:** Persistent log of all executed trades
 - **Configurable:** Easy to extend for new order types or matching logic
 
-## Getting Started
 
 ### Prerequisites
 
@@ -20,24 +19,19 @@ High-performance, thread-safe C++ trading system with real-time WebSocket API, c
 - [uWebSockets](https://github.com/uNetworking/uWebSockets) (v20+)
 - [nlohmann/json](https://github.com/nlohmann/json)
 - zlib (for compression)
-
 ### Build Instructions
 
 
 1. **Clone the repository:**
 	 ```bash
 	 git clone <your-repo-url>
-	 cd trading_system
 	 ```
 
 2. **Install dependencies:**
-
 ### Dependency Installation
 
 #### uWebSockets (v20+)
 - **Option 1: Build from source**
-	```bash
-	git clone https://github.com/uNetworking/uWebSockets.git
 	cd uWebSockets
 	make
 	```
@@ -51,15 +45,15 @@ High-performance, thread-safe C++ trading system with real-time WebSocket API, c
 
 #### nlohmann/json
 - **Option 1: Homebrew (macOS)**
-	```bash
-	brew install nlohmann-json
-	```
-- **Option 2: Manual download**
-	Download [`json.hpp`](https://github.com/nlohmann/json/releases) and place it in `libs/nlohmann/json.hpp`.
-	Add `-Ilibs/nlohmann` to your build command.
+Example build command:
 
-#### zlib
-- **macOS:** Already included.
+```sh
+g++ -std=c++17 \
+	-Ilibs/uWebSockets/src \
+	-Ilibs/uWebSockets/uSockets/src \
+	-I/opt/homebrew/include \
+	websocket.cpp order-book.cpp libs/uWebSockets/uSockets/*.o -o trading_server -lz
+```
 - **Linux:** Install with your package manager, e.g.:
 	```bash
 	sudo apt-get install zlib1g-dev

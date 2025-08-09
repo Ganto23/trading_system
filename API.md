@@ -90,73 +90,206 @@ Interact with the trading system via WebSocket (default port: **9001**). All mes
 ```json
 {"type": "getOrderBookSnapshot"}
 ```
+## WebSocket API
 
-**Response:**
+### Authentication
+
+Authenticate with a token:
+
+```json
+{
+  "type": "auth",
+  "token": "your_secret_token"
+}
+```
+
+Response:
+
+```json
+{
+  "type": "auth_response",
+  "success": true
+}
+```
+
+### Order Actions
+
+#### Submit Order
+
+```json
+{
+  "type": "submit",
+  "price": 101.5,
+  "qty": 10,
+  "is_buy": true
+}
+```
+
+Response:
+
+```json
+{
+  "type": "submit_response",
+  "success": true,
+  "id": 12345
+}
+```
+
+#### Cancel Order
+
+```json
+{
+  "type": "cancel",
+  "id": 12345
+}
+```
+
+Response:
+
+```json
+{
+  "type": "cancel_response",
+  "success": true
+}
+```
+
+#### Modify Order
+
+```json
+{
+  "type": "modify",
+  "id": 12345,
+  "price": 102.0,
+  "qty": 5
+}
+```
+
+Response:
+
+```json
+{
+  "type": "modify_response",
+  "success": true
+}
+```
+
+#### Get Order Status
+
+```json
+{
+  "type": "getOrderStatus",
+  "id": 12345
+}
+```
+
+Response:
+
+```json
+{
+  "type": "order_status_response",
+  "id": 12345,
+  "status": 0
+}
+```
+
+#### Get Order Book Snapshot
+
+```json
+{
+  "type": "getOrderBookSnapshot"
+}
+```
+
+Response:
+
 ```json
 {
   "type": "order_book_snapshot_response",
-  "bids": [
-    {"id": 123, "price": 100.5, "quantity": 10, "is_buy": true, "status": 0}
-  ],
-  "asks": [
-    {"id": 124, "price": 101.0, "quantity": 5, "is_buy": false, "status": 0}
-  ]
+  "bids": [ ... ],
+  "asks": [ ... ]
 }
 ```
 
----
+#### Get Trade History
 
-## Get Trade History
-
-**Request:**
 ```json
-{"type": "getTradeHistory"}
+{
+  "type": "getTradeHistory"
+}
 ```
 
-**Response:**
+Response:
+
 ```json
 {
   "type": "trade_history_response",
-  "trades": [
-    {"buy_order_id": 123, "sell_order_id": 124, "price": 101.0, "quantity": 5, "timestamp": 1691590000}
-  ]
+  "trades": [ ... ]
 }
 ```
 
 ---
 
-## Error Responses
+### New Metrics & Endpoints
 
-All errors return a message of this form:
+#### Get Open Orders Count
+
+Returns the number of open orders for the authenticated user.
+
+Request:
 ```json
-{"type": "error", "message": "Description of error"}
+{
+  "type": "getOpenOrdersCount"
+}
+```
+Response:
+```json
+{
+  "type": "open_orders_count_response",
+  "count": 2
+}
+```
+
+#### Get Realized PnL
+
+Returns the realized profit and loss for the authenticated user.
+
+Request:
+```json
+{
+  "type": "getRealizedPnL"
+}
+```
+Response:
+```json
+{
+  "type": "realized_pnl_response",
+  "pnl": 15.25
+}
+```
+
+#### Get Unrealized PnL
+
+Returns the unrealized profit and loss for the authenticated user, based on current market prices.
+
+Request:
+```json
+{
+  "type": "getUnrealizedPnL"
+}
+```
+Response:
+```json
+{
+  "type": "unrealized_pnl_response",
+  "pnl": -3.50
+}
 ```
 
 ---
 
-## Status Codes
-- `0`: Open
-- `1`: Filled
-- `2`: Canceled
-- `3`: NotFound
+### Realized vs. Unrealized PnL
 
----
+- **Realized PnL** is updated automatically when trades are executed (order fills).
+- **Unrealized PnL** is calculated on demand using current best bid/ask prices for open orders.
 
-## Notes
-- All requests must be valid JSON.
-- You must authenticate before submitting, modifying, or canceling orders.
-- Only the owner of an order can modify or cancel it.
-- All responses are JSON objects.
-
----
-
-## Example Workflow
-1. Authenticate
-2. Submit an order
-3. Query order status
-4. Cancel or modify order
-5. Get order book or trade history
-
----
-
-For more details, see the main README or source code.
+Both metrics are available per user via the API endpoints above.

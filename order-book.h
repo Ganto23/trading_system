@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <map>
@@ -10,6 +11,7 @@
 #include <mutex>
 #include <chrono>
 #include <atomic>
+#include <functional>
 #include "pool_allocator.h"
 
 enum class OrderStatus { Open, Filled, Canceled, NotFound };
@@ -41,19 +43,21 @@ public:
     OrderBook();
     ~OrderBook();
 
-    uint64_t submitOrder(double price, uint32_t quantity, bool is_buy);
-    bool cancelOrder(uint64_t id);
-    bool modifyOrder(uint64_t id, double new_price, uint32_t new_quantity);
-    OrderStatus getOrderStatus(uint64_t id);
-    void getOrderBookSnapshot(std::vector<Order>& bid_snapshot, std::vector<Order>& ask_snapshot);
-    const std::vector<Trade>& getTradeHistory() const;
+    // Expose getOrderById for external access
+    Order* getOrderById(uint64_t id);
 
-private:
+    // Price -> PriceLevel
     std::map<double, PriceLevel, std::greater<double>> bids;
     std::map<double, PriceLevel, std::less<double>> asks;
+
+    // Multiple pools for dynamic expansion
     std::vector<PoolAllocator<Order, 1024>*> pools;
     size_t current_pool = 0;
+
+    // Lookup for all orders by ID
     std::unordered_map<uint64_t, Order*> order_lookup;
+
+    // Trade history log
     std::vector<Trade> trade_history;
 
     std::shared_mutex bids_mutex;
@@ -64,11 +68,32 @@ private:
 
     std::atomic<uint64_t> next_order_id = 1;
 
-    Order* createOrder(uint64_t id, double price, uint32_t quantity, bool is_buy);
-    uint64_t generateOrderId();
-    uint64_t getUnixTimestamp() const;
-    void matchOrders(uint64_t timestamp = 0);
-    Order* getOrderById(uint64_t id);
+    uint64_t submitOrder(double price, uint32_t quantity, bool is_buy);
+    bool cancelOrder(uint64_t id);
+    bool modifyOrder(uint64_t id, double new_price, uint32_t new_quantity);
+    OrderStatus getOrderStatus(uint64_t id);
+    void getOrderBookSnapshot(std::vector<Order>& bid_snapshot, std::vector<Order>& ask_snapshot);
+    const std::vector<Trade>& getTradeHistory() const;
+
+    // Realized PnL update callback
+    std::function<void(uint64_t, bool, double, uint32_t)> onTradePnLUpdate = nullptr;
+
     void removeOrderFromBook(Order* order);
     void destroyOrder(Order* order);
+
+    // Helper to get current Unix timestamp
+    uint64_t getUnixTimestamp() const;
+
+    // Generate a unique order ID
+    uint64_t generateOrderId();
+
+    // Create a new order using the latest pool allocator
+    Order* createOrder(uint64_t id, double price, uint32_t quantity, bool is_buy);
+
+    // Match orders (simple matching engine)
+    void matchOrders(uint64_t timestamp = 0);
+
+private:
+    
 };
+

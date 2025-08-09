@@ -16,6 +16,8 @@ using json = nlohmann::json;
 struct ClientData {
     bool authenticated = false;
     std::unordered_set<uint64_t> my_orders;
+        double realized_pnl = 0.0;
+        double unrealized_pnl = 0.0;
 };
 
 // Helper function to count open orders for a user
@@ -28,9 +30,65 @@ size_t getOpenOrdersCount(const ClientData* client) {
     }
     return count;
 };
+// Helper function to get best bid (highest price)
+double getBestBid() {
+    std::vector<Order> bid_snapshot, ask_snapshot;
+    orderBook.getOrderBookSnapshot(bid_snapshot, ask_snapshot);
+    if (!bid_snapshot.empty()) {
+        return bid_snapshot.front().price;
+    }
+    return 0.0;
+}
+
+// Helper function to get best ask (lowest price)
+double getBestAsk() {
+    std::vector<Order> bid_snapshot, ask_snapshot;
+    orderBook.getOrderBookSnapshot(bid_snapshot, ask_snapshot);
+    if (!ask_snapshot.empty()) {
+        return ask_snapshot.front().price;
+    }
+    return 0.0;
+}
+
+// Helper function to calculate unrealized PnL for a user
+double getUnrealizedPnL(const ClientData* client) {
+    double pnl = 0.0;
+    for (auto id : client->my_orders) {
+        OrderStatus status = orderBook.getOrderStatus(id);
+        if (status == OrderStatus::Open) {
+            const Order* order = orderBook.getOrderById(id);
+            if (order) {
+                double market_price = order->is_buy ? getBestAsk() : getBestBid();
+                if (market_price > 0) {
+                    pnl += (market_price - order->price) * order->quantity * (order->is_buy ? 1 : -1);
+                }
+            }
+        }
+    }
+    return pnl;
+}
 
 int main() {
+    // Map order ID to ClientData* for PnL updates
+    static std::unordered_map<uint64_t, ClientData*> order_to_client;
+
     uWS::App app;
+
+    // Set realized PnL update callback
+    orderBook.onTradePnLUpdate = [](uint64_t order_id, bool is_buy, double price, uint32_t qty) {
+        auto it = order_to_client.find(order_id);
+        if (it != order_to_client.end() && it->second) {
+            ClientData* client = it->second;
+            // Realized PnL: (sell - buy) * qty for buy, (buy - sell) * qty for sell
+            // For buy: profit = (trade_price - order_price) * qty
+            // For sell: profit = (order_price - trade_price) * qty
+            const Order* order = orderBook.getOrderById(order_id);
+            if (order) {
+                double pnl = (is_buy ? (price - order->price) : (order->price - price)) * qty;
+                client->realized_pnl += pnl;
+            }
+        }
+    };
     app.ws<ClientData>("/*", {
         // Handle new client connection
         .open = [](auto* ws) {
@@ -71,7 +129,10 @@ int main() {
                         bool is_buy = j["is_buy"];
                         uint64_t id = orderBook.submitOrder(price, qty, is_buy); // OrderBook now generates the ID
                         bool ok = (id != 0);
-                        if (ok) ws->getUserData()->my_orders.insert(id);
+                        if (ok) {
+                            ws->getUserData()->my_orders.insert(id);
+                            order_to_client[id] = ws->getUserData();
+                        }
                         response = {
                             {"type", "submit_response"},
                             {"success", ok},
@@ -93,7 +154,10 @@ int main() {
                             } else {
                                 bool ok = orderBook.cancelOrder(id);
                                 response = {{"type", "cancel_response"}, {"success", ok}};
-                                if (ok) ws->getUserData()->my_orders.erase(id);
+                                if (ok) {
+                                    ws->getUserData()->my_orders.erase(id);
+                                    order_to_client.erase(id);
+                                }
                             }
                         }
                     }
@@ -116,6 +180,7 @@ int main() {
                             } else {
                                 bool ok = orderBook.modifyOrder(id, price, qty);
                                 response = {{"type", "modify_response"}, {"success", ok}};
+                                if (ok) order_to_client[id] = ws->getUserData();
                             }
                         }
                     }
@@ -149,6 +214,17 @@ int main() {
                         response["asks"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
                     }
                 } else if (type == "getTradeHistory") {
+                    } else if (type == "getRealizedPnL") {
+                        response = {
+                            {"type", "realized_pnl_response"},
+                            {"pnl", ws->getUserData()->realized_pnl}
+                        };
+                    } else if (type == "getUnrealizedPnL") {
+                        double pnl = getUnrealizedPnL(ws->getUserData());
+                        response = {
+                            {"type", "unrealized_pnl_response"},
+                            {"pnl", pnl}
+                        };
                 } else if (type == "getOpenOrdersCount") {
                     size_t count = getOpenOrdersCount(ws->getUserData());
                     response = {
@@ -175,6 +251,10 @@ int main() {
         // Handle client disconnect
         .close = [](auto* ws, int code, std::string_view reason) {
             // Optional: log disconnects
+            // Clean up order_to_client for this user
+            for (auto id : ws->getUserData()->my_orders) {
+                order_to_client.erase(id);
+            }
         }
     }).listen("0.0.0.0", 9001, [](auto* listen_socket) {
         if (listen_socket) {
