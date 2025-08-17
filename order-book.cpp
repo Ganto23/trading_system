@@ -246,9 +246,5 @@ void OrderBook::matchOrders(uint64_t timestamp) {
     // Safe to notify; callbacks may read the book
     for (const auto& t : to_fire) {
         if (onTradeEvent) onTradeEvent(t);
-        if (onTradePnLUpdate) {
-            onTradePnLUpdate(t.buy_order_id, true, t.price, t.quantity);
-            onTradePnLUpdate(t.sell_order_id, false, t.price, t.quantity);
-        }
     }
 }

@@ -78,8 +78,6 @@ public:
     // Return a copy to avoid exposing internal storage after releasing the lock
     std::vector<Trade> getTradeHistory() const;
 
-    // Realized PnL update callback
-    std::function<void(uint64_t, bool, double, uint32_t)> onTradePnLUpdate = nullptr;
     // Trade event callback (broadcast individual trade details externally)
     std::function<void(const Trade&)> onTradeEvent = nullptr;
 

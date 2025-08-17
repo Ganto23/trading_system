@@ -24,13 +24,10 @@ struct ClientData;
 // Track all connected clients and map orders to owners
 static std::unordered_set<uWS::WebSocket<false, true, ClientData>*> connected_clients;
 static std::unordered_map<uint64_t, ClientData*> order_to_client; // moved global
-static std::vector<uint64_t> system_seed_orders; // track seeded liquidity order ids
 static std::atomic<bool> snapshotDirty{false};
 static std::atomic<bool> snapshotBroadcastScheduled{false};
 static std::chrono::steady_clock::time_point lastSnapshotBroadcast = std::chrono::steady_clock::now();
 static constexpr std::chrono::milliseconds SNAPSHOT_MIN_INTERVAL{100}; // throttle interval
-// Cache entry prices to avoid orderBook lookups inside trade callback (prevent self-deadlock)
-static std::unordered_map<uint64_t, double> order_entry_price;
 static double last_trade_price = 0.0; // last executed trade price for marking
 // Stats & shutdown tracking
 static std::atomic<bool> shutdownRequested{false};
@@ -133,10 +130,9 @@ void seedInitialBook(double mid_price = 100.0,
     for (int i = 1; i <= levels_each_side; ++i) {
         double bid_price = mid_price - i * tick;
         double ask_price = mid_price + i * tick;
-        uint64_t bid_id = orderBook.submitOrder(bid_price, base_qty, true);
-        uint64_t ask_id = orderBook.submitOrder(ask_price, base_qty, false);
-        if (bid_id) system_seed_orders.push_back(bid_id);
-        if (ask_id) system_seed_orders.push_back(ask_id);
+    uint64_t bid_id = orderBook.submitOrder(bid_price, base_qty, true);
+    uint64_t ask_id = orderBook.submitOrder(ask_price, base_qty, false);
+    (void)bid_id; (void)ask_id; // ids not tracked
     }
 }
 
@@ -322,8 +318,7 @@ int main() {
     uWS::App app;
     g_loop = uWS::Loop::get();
 
-    // Disable legacy per-order PnL callback (handled in onTradeEvent now)
-    orderBook.onTradePnLUpdate = [](uint64_t, bool, double, uint32_t) {};
+    // onTradePnLUpdate removed; onTradeEvent handles notifications
 
     // Comprehensive trade event callback: update positions, realized PnL, broadcast
     orderBook.onTradeEvent = [](const Trade& t){
@@ -489,7 +484,7 @@ int main() {
                             stat_orders_submitted.fetch_add(1, std::memory_order_relaxed);
                             ws->getUserData()->my_orders.insert(id);
                             order_to_client[id] = ws->getUserData();
-                            order_entry_price[id] = price; // cache entry price
+                            // entry price cache removed
                             final_status = orderBook.getOrderStatus(id);
                             const Order* ord_ptr = orderBook.getOrderById(id);
                             if (final_status == OrderStatus::Filled) {
@@ -519,7 +514,7 @@ int main() {
                                 stat_orders_canceled.fetch_add(1, std::memory_order_relaxed);
                                 ws->getUserData()->my_orders.erase(id);
                                 order_to_client.erase(id);
-                                order_entry_price.erase(id);
+                                // entry price cache removed
                                 triggerBroadcast = true;
                             }
                             response = {{"type","cancel_response"},{"success",ok},{"status", static_cast<int>(after)},{"elapsed_ms", elapsed}};
@@ -550,7 +545,7 @@ int main() {
                                 OrderStatus newStatus = orderBook.getOrderStatus(id);
                                 if (ok) {
                                     order_to_client[id] = ws->getUserData();
-                                    order_entry_price[id] = price; // update cached price
+                                    // entry price cache removed
                                     triggerBroadcast = true;
                                 }
                                 response = {{"type", "modify_response"}, {"success", ok}, {"status", static_cast<int>(newStatus)}};
