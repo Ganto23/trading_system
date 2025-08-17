@@ -86,6 +86,29 @@ Connect via WebSocket (port 9001) and use JSON messages to:
 - Submit, modify, or cancel orders
 - Query order status, order book, and trade history
 
+### Frontend (Vite + React)
+
+The `frontend/` app connects to the WebSocket server and renders:
+- Realized/Unrealized PnL per connected client
+- Order book snapshot
+- Recent trades
+
+Run the frontend:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Environment variables (optional):
+- `VITE_WS_URL` (default `ws://localhost:9001`)
+- `VITE_AUTH_TOKEN` (default `your_secret_token`)
+- `VITE_ALGO_NAME` (optional name displayed in PnL charts)
+
+Notes:
+- The server may send JSON as binary WebSocket frames; the frontend handles Blob/ArrayBuffer parsing.
+- If you supply `VITE_ALGO_NAME`, it will be sent during auth and echoed in PnL responses.
+
 ## API Example
 
 **Authentication:**

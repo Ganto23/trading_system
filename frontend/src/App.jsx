@@ -23,8 +23,8 @@ export default function App() {
     return () => clearInterval(t);
   }, [send]);
 
-  const realized = useMemo(() => pnlByClient.map(c => ({ id: c.client_id, value: c.realized })), [pnlByClient]);
-  const unrealized = useMemo(() => pnlByClient.map(c => ({ id: c.client_id, value: c.unrealized })), [pnlByClient]);
+  const realized = useMemo(() => pnlByClient.map(c => ({ id: c.client_id, name: c.name, value: c.realized })), [pnlByClient]);
+  const unrealized = useMemo(() => pnlByClient.map(c => ({ id: c.client_id, name: c.name, value: c.unrealized })), [pnlByClient]);
 
   return (
     <div className="app">

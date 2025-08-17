@@ -56,6 +56,7 @@ struct ClientData {
     int64_t position = 0;      // net position (>0 long, <0 short)
     double avg_cost = 0.0;     // average entry cost for current absolute position
     int client_id = 0;         // unique id for aggregation
+    std::string name;          // optional human-friendly algorithm name (from auth)
 };
 
 void broadcastOrderBookSnapshot() {
@@ -201,8 +202,10 @@ static json buildAllPnL() {
         auto* cd = ws->getUserData();
         if (!cd || !cd->authenticated) continue;
         double unreal = getUnrealizedPnL(cd);
+        std::string displayName = cd->name.empty() ? (std::string("Client ") + std::to_string(cd->client_id)) : cd->name;
         arr.push_back({
             {"client_id", cd->client_id},
+            {"name", displayName},
             {"position", cd->position},
             {"realized", cd->realized_pnl},
             {"unrealized", unreal},
@@ -449,9 +452,11 @@ int main() {
 
                 if (type == "auth") {
                     std::string token = j.value("token", "");
+                    std::string providedName = j.value("name", "");
                     // Replace "your_secret_token" with your real token or validation logic
                     if (token == "your_secret_token") {
                         ws->getUserData()->authenticated = true;
+                        ws->getUserData()->name = providedName;
                         response = {{"type", "auth_response"}, {"success", true}};
                     } else {
                         response = {{"type", "auth_response"}, {"success", false}, {"message", "Invalid token"}};

@@ -6,12 +6,14 @@ Interact with the trading system via WebSocket (default port: **9001**). All mes
 
 ## Authentication
 
-**Request:**
+Send this first. Optionally include a human-friendly algorithm name that will be echoed in PnL responses.
+
+Request:
 ```json
-{"type": "auth", "token": "your_secret_token"}
+{"type": "auth", "token": "your_secret_token", "name": "VWAP"}
 ```
 
-**Response:**
+Response:
 ```json
 {"type": "auth_response", "success": true}
 ```
@@ -111,6 +113,21 @@ Interact with the trading system via WebSocket (default port: **9001**). All mes
 | Get Open Orders      | `{ "type": "getOpenOrdersCount" }` | `{ "type": "open_orders_count_response", "count": 2 }` |
 | Get Realized PnL     | `{ "type": "getRealizedPnL" }` | `{ "type": "realized_pnl_response", "pnl": 15.25 }` |
 | Get Unrealized PnL   | `{ "type": "getUnrealizedPnL" }` | `{ "type": "unrealized_pnl_response", "pnl": -3.50 }` |
+
+#### All PnL (response shape)
+Request:
+```json
+{ "type": "getAllPnL" }
+```
+Response:
+```json
+{
+  "type": "all_pnl_response",
+  "clients": [
+    { "client_id": 1, "name": "VWAP", "position": 0, "realized": 0, "unrealized": 0, "avg_cost": 0 }
+  ]
+}
+```
 
 ---
 
@@ -404,3 +421,33 @@ Response:
 - **Unrealized PnL** is calculated on demand using current best bid/ask prices for open orders.
 
 Both metrics are available per user via the API endpoints above.
+
+---
+
+### PnL Broadcast (Push)
+Server pushes aggregate PnL snapshots to all clients after trades:
+```json
+{
+  "type": "all_pnl_push",
+  "clients": [
+    { "client_id": 1, "name": "VWAP", "position": 5, "realized": 12.5, "unrealized": -0.75, "avg_cost": 100.2 }
+  ]
+}
+```
+
+Notes:
+- If a client did not supply a name at auth, the server falls back to "Client <id>".
+- WebSocket frames may be sent as binary containing JSON text. Clients should handle Blob/ArrayBuffer and parse JSON accordingly.
+
+---
+
+### Correlation IDs (corr)
+
+Requests may include an unsigned integer field `corr`. If present, the server echoes it in the corresponding direct response:
+```json
+{ "type": "getAllPnL", "corr": 42 }
+```
+Response:
+```json
+{ "type": "all_pnl_response", "clients": [...], "corr": 42 }
+```

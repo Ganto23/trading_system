@@ -12,7 +12,7 @@ import {
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 export default function UnrealizedPnLChart({ data }) {
-  const labels = data.map(d => `Client ${d.id}`);
+  const labels = data.map(d => d.name || `Client ${d.id}`);
   const values = data.map(d => d.value);
   return (
     <Bar

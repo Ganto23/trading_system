@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const WS_URL = (import.meta.env.VITE_WS_URL) || 'ws://localhost:9001';
 const AUTH_TOKEN = (import.meta.env.VITE_AUTH_TOKEN) || 'your_secret_token';
+const AUTH_NAME = (import.meta.env.VITE_ALGO_NAME) || '';
 
 export default function useWebSocket() {
   const wsRef = useRef(null);
@@ -69,7 +70,7 @@ export default function useWebSocket() {
     ws.onopen = () => {
       console.log('[WS] open -> sending auth');
       setReady(true);
-      ws.send(JSON.stringify({ type: 'auth', token: AUTH_TOKEN }));
+  ws.send(JSON.stringify({ type: 'auth', token: AUTH_TOKEN, name: AUTH_NAME }));
       // Initial pulls
       ws.send(JSON.stringify({ type: 'getAllPnL', corr: 1 }));
       ws.send(JSON.stringify({ type: 'getOrderBookSnapshot', corr: 2 }));
