@@ -186,9 +186,9 @@ void OrderBook::getOrderBookSnapshot(std::vector<Order>& bid_snapshot, std::vect
     }
 }
 
-const std::vector<Trade>& OrderBook::getTradeHistory() const {
+std::vector<Trade> OrderBook::getTradeHistory() const {
     std::shared_lock trade_lock(trade_history_mutex);
-    return trade_history;
+    return trade_history; // copy under lock
 }
 
 void OrderBook::matchOrders(uint64_t timestamp) {

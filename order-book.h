@@ -75,7 +75,8 @@ public:
     bool modifyOrder(uint64_t id, double new_price, uint32_t new_quantity);
     OrderStatus getOrderStatus(uint64_t id);
     void getOrderBookSnapshot(std::vector<Order>& bid_snapshot, std::vector<Order>& ask_snapshot);
-    const std::vector<Trade>& getTradeHistory() const;
+    // Return a copy to avoid exposing internal storage after releasing the lock
+    std::vector<Trade> getTradeHistory() const;
 
     // Realized PnL update callback
     std::function<void(uint64_t, bool, double, uint32_t)> onTradePnLUpdate = nullptr;

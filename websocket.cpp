@@ -238,7 +238,7 @@ void printFinalStats() {
     size_t open_buy = 0, open_sell = 0;
     for (auto& o : bid_snapshot) if (o.status == OrderStatus::Open) ++open_buy;
     for (auto& o : ask_snapshot) if (o.status == OrderStatus::Open) ++open_sell;
-    const auto& trades = orderBook.getTradeHistory();
+    auto trades = orderBook.getTradeHistory();
 
     sep("SERVER SUMMARY");
     std::cerr << "Last trade price: " << last_trade_price << "\n";
@@ -591,7 +591,7 @@ int main() {
                         response["asks"].push_back({{"id", o.id}, {"price", o.price}, {"quantity", o.quantity}, {"is_buy", o.is_buy}, {"status", static_cast<int>(o.status)}});
                     }
                 } else if (type == "getTradeHistory") {
-                    const auto& trades = orderBook.getTradeHistory();
+                    auto trades = orderBook.getTradeHistory();
                     response["type"] = "trade_history_response";
                     response["trades"] = json::array();
                     for (const auto& t : trades) {
