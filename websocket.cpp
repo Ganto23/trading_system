@@ -148,22 +148,12 @@ size_t getOpenOrdersCount(const ClientData* client) {
 }
 // Helper function to get best bid (highest price)
 double getBestBid() {
-    std::vector<Order> bid_snapshot, ask_snapshot;
-    orderBook.getOrderBookSnapshot(bid_snapshot, ask_snapshot);
-    if (!bid_snapshot.empty()) {
-        return bid_snapshot.front().price;
-    }
-    return 0.0;
+    return orderBook.getBestBidPrice();
 }
 
 // Helper function to get best ask (lowest price)
 double getBestAsk() {
-    std::vector<Order> bid_snapshot, ask_snapshot;
-    orderBook.getOrderBookSnapshot(bid_snapshot, ask_snapshot);
-    if (!ask_snapshot.empty()) {
-        return ask_snapshot.front().price;
-    }
-    return 0.0;
+    return orderBook.getBestAskPrice();
 }
 
 // Mark price fallback: prefer last trade, else mid, else best side

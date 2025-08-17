@@ -16,14 +16,20 @@ Order* OrderBook::getOrderById(uint64_t id) {
 }
 
 Order* OrderBook::createOrder(uint64_t id, double price, uint32_t quantity, bool is_buy) {
-    PoolAllocator<Order, 1024>* allocator = pools[current_pool];
-    Order* order = allocator->allocate();
-    if (!order) {
-        pools.push_back(new PoolAllocator<Order, 1024>());
-        current_pool++;
+    PoolAllocator<Order, 1024>* allocator = nullptr;
+    Order* order = nullptr;
+    {
+        // Protect pool vector access, expansion, and allocation
+        std::unique_lock pools_lock(pools_mutex);
         allocator = pools[current_pool];
         order = allocator->allocate();
-        if (!order) return nullptr;
+        if (!order) {
+            pools.push_back(new PoolAllocator<Order, 1024>());
+            current_pool++;
+            allocator = pools[current_pool];
+            order = allocator->allocate();
+            if (!order) return nullptr;
+        }
     }
     order->id = id;
     order->price = price;
@@ -39,15 +45,19 @@ Order* OrderBook::createOrder(uint64_t id, double price, uint32_t quantity, bool
 }
 
 void OrderBook::destroyOrder(Order* order) {
-    {
-        std::shared_lock pools_lock(pools_mutex);
-        pools[order->pool_index]->deallocate(order);
-    }
+    // Capture before any deallocation to avoid use-after-free
+    uint64_t id = order->id;
+    OrderStatus st = order->status;
+
     {
         std::unique_lock lookup_lock(order_lookup_mutex);
-    // Archive final status for future status queries
-    final_status_archive[order->id] = order->status;
-        order_lookup.erase(order->id);
+        // Archive final status for future status queries
+        final_status_archive[id] = st;
+        order_lookup.erase(id);
+    }
+    {
+        std::unique_lock pools_lock(pools_mutex);
+        pools[order->pool_index]->deallocate(order);
     }
 }
 
@@ -191,7 +201,20 @@ std::vector<Trade> OrderBook::getTradeHistory() const {
     return trade_history; // copy under lock
 }
 
+double OrderBook::getBestBidPrice() const {
+    std::shared_lock bids_lock(bids_mutex);
+    return bids.empty() ? 0.0 : bids.begin()->first;
+}
+
+double OrderBook::getBestAskPrice() const {
+    std::shared_lock asks_lock(asks_mutex);
+    return asks.empty() ? 0.0 : asks.begin()->first;
+}
+
 void OrderBook::matchOrders(uint64_t timestamp) {
+    if (timestamp == 0) {
+        timestamp = getUnixTimestamp();
+    }
     // Collect trades to notify after releasing book locks
     std::vector<Trade> to_fire;
 

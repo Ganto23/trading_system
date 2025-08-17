@@ -62,8 +62,8 @@ public:
     // Trade history log
     std::vector<Trade> trade_history;
 
-    std::shared_mutex bids_mutex;
-    std::shared_mutex asks_mutex;
+    mutable std::shared_mutex bids_mutex;
+    mutable std::shared_mutex asks_mutex;
     std::shared_mutex order_lookup_mutex;
     mutable std::shared_mutex trade_history_mutex;
     std::shared_mutex pools_mutex;
@@ -77,6 +77,10 @@ public:
     void getOrderBookSnapshot(std::vector<Order>& bid_snapshot, std::vector<Order>& ask_snapshot);
     // Return a copy to avoid exposing internal storage after releasing the lock
     std::vector<Trade> getTradeHistory() const;
+
+    // Fast best price accessors (avoid full snapshots for simple queries)
+    double getBestBidPrice() const;
+    double getBestAskPrice() const;
 
     // Trade event callback (broadcast individual trade details externally)
     std::function<void(const Trade&)> onTradeEvent = nullptr;
