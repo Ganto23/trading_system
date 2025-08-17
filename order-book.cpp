@@ -192,60 +192,63 @@ const std::vector<Trade>& OrderBook::getTradeHistory() const {
 }
 
 void OrderBook::matchOrders(uint64_t timestamp) {
-    std::unique_lock bids_lock(bids_mutex);
-    std::unique_lock asks_lock(asks_mutex);
-    if (bids.empty() || asks.empty()) return;
-    auto bid_it = bids.begin();
-    auto ask_it = asks.begin();
-    if (bid_it->first < ask_it->first) return;
-    while (!bids.empty() && !asks.empty()) {
-        bid_it = bids.begin();
-        ask_it = asks.begin();
-        double bid_price = bid_it->first;
-        double ask_price = ask_it->first;
-        if (bid_price < ask_price) break;
-        auto& bid_level = bid_it->second;
-        auto& ask_level = ask_it->second;
-        if (bid_level.orders.empty()) {
-            bids.erase(bid_it);
-            continue;
+    // Collect trades to notify after releasing book locks
+    std::vector<Trade> to_fire;
+
+    {
+        std::unique_lock bids_lock(bids_mutex);
+        std::unique_lock asks_lock(asks_mutex);
+
+        if (bids.empty() || asks.empty()) return;
+        while (!bids.empty() && !asks.empty()) {
+            auto bid_it = bids.begin();
+            auto ask_it = asks.begin();
+            if (bid_it->first < ask_it->first) break;
+
+            auto& bid_level = bid_it->second;
+            auto& ask_level = ask_it->second;
+            if (bid_level.orders.empty()) { bids.erase(bid_it); continue; }
+            if (ask_level.orders.empty()) { asks.erase(ask_it); continue; }
+
+            Order* buy_order = bid_level.orders.front();
+            Order* sell_order = ask_level.orders.front();
+
+            uint32_t trade_qty = std::min(buy_order->quantity, sell_order->quantity);
+            double trade_price = sell_order->price;
+
+            {
+                std::unique_lock trade_lock(trade_history_mutex);
+                trade_history.push_back({buy_order->id, sell_order->id, trade_price, trade_qty, timestamp});
+            }
+            // Defer external notifications
+            to_fire.push_back({buy_order->id, sell_order->id, trade_price, trade_qty, timestamp});
+
+            buy_order->quantity -= trade_qty;
+            sell_order->quantity -= trade_qty;
+
+            if (buy_order->quantity == 0) {
+                buy_order->status = OrderStatus::Filled;
+                bid_level.id_map.erase(buy_order->id);
+                bid_level.orders.pop_front();
+                destroyOrder(buy_order);
+            }
+            if (sell_order->quantity == 0) {
+                sell_order->status = OrderStatus::Filled;
+                ask_level.id_map.erase(sell_order->id);
+                ask_level.orders.pop_front();
+                destroyOrder(sell_order);
+            }
+            if (bid_level.orders.empty()) bids.erase(bid_it);
+            if (ask_level.orders.empty()) asks.erase(ask_it);
         }
-        if (ask_level.orders.empty()) {
-            asks.erase(ask_it);
-            continue;
-        }
-        Order* buy_order = bid_level.orders.front();
-        Order* sell_order = ask_level.orders.front();
-        uint32_t trade_qty = std::min(buy_order->quantity, sell_order->quantity);
-        double trade_price = sell_order->price;
-        {
-            std::unique_lock trade_lock(trade_history_mutex);
-            trade_history.push_back({buy_order->id, sell_order->id, trade_price, trade_qty, timestamp});
-        }
-        // Fire external trade event (before orders potentially destroyed)
-        if (onTradeEvent) {
-            Trade t{buy_order->id, sell_order->id, trade_price, trade_qty, timestamp};
-            onTradeEvent(t);
-        }
+    } // release bids_mutex and asks_mutex
+
+    // Safe to notify; callbacks may read the book
+    for (const auto& t : to_fire) {
+        if (onTradeEvent) onTradeEvent(t);
         if (onTradePnLUpdate) {
-            onTradePnLUpdate(buy_order->id, true, trade_price, trade_qty);
-            onTradePnLUpdate(sell_order->id, false, trade_price, trade_qty);
+            onTradePnLUpdate(t.buy_order_id, true, t.price, t.quantity);
+            onTradePnLUpdate(t.sell_order_id, false, t.price, t.quantity);
         }
-        buy_order->quantity -= trade_qty;
-        sell_order->quantity -= trade_qty;
-        if (buy_order->quantity == 0) {
-            buy_order->status = OrderStatus::Filled;
-            bid_level.id_map.erase(buy_order->id);
-            bid_level.orders.pop_front();
-            destroyOrder(buy_order);
-        }
-        if (sell_order->quantity == 0) {
-            sell_order->status = OrderStatus::Filled;
-            ask_level.id_map.erase(sell_order->id);
-            ask_level.orders.pop_front();
-            destroyOrder(sell_order);
-        }
-        if (bid_level.orders.empty()) bids.erase(bid_it);
-        if (ask_level.orders.empty()) asks.erase(ask_it);
     }
 }

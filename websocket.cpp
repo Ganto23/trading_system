@@ -42,6 +42,10 @@ static std::atomic<uint64_t> stat_trade_events{0};
 static std::atomic<uint64_t> stat_traded_quantity{0};
 static std::mutex filled_set_mutex;
 static std::unordered_set<uint64_t> filled_order_set;
+static std::atomic<int> next_client_id{1};
+// Simple per-client PnL query rate limiting
+struct RateBucket { std::chrono::steady_clock::time_point windowStart; int count = 0; };
+static std::unordered_map<ClientData*, RateBucket> pnlRate;
 
 OrderBook orderBook; // Global instance
 
@@ -54,6 +58,7 @@ struct ClientData {
     double unrealized_pnl = 0.0;
     int64_t position = 0;      // net position (>0 long, <0 short)
     double avg_cost = 0.0;     // average entry cost for current absolute position
+    int client_id = 0;         // unique id for aggregation
 };
 
 void broadcastOrderBookSnapshot() {
@@ -202,6 +207,23 @@ double getUnrealizedPnL(const ClientData* client) {
         }
     }
     return pnl;
+}
+
+static json buildAllPnL() {
+    json arr = json::array();
+    for (auto* ws : connected_clients) {
+        auto* cd = ws->getUserData();
+        if (!cd || !cd->authenticated) continue;
+        double unreal = getUnrealizedPnL(cd);
+        arr.push_back({
+            {"client_id", cd->client_id},
+            {"position", cd->position},
+            {"realized", cd->realized_pnl},
+            {"unrealized", unreal},
+            {"avg_cost", cd->avg_cost}
+        });
+    }
+    return arr;
 }
 
 // Pretty separator helper
@@ -363,6 +385,7 @@ int main() {
             ClientData* cd = itOwner->second; if (!cd) return;
             for (auto* ws : connected_clients) {
                 if (ws->getUserData() == cd) {
+                    double unreal_exec = getUnrealizedPnL(cd); // compute fresh unrealized for push
                     json exec = {
                         {"type","execution"},
                         {"order_id", order_id},
@@ -371,7 +394,8 @@ int main() {
                         {"quantity", t.quantity},
                         {"position", cd->position},
                         {"avg_cost", cd->avg_cost},
-                        {"realized_pnl", cd->realized_pnl}
+                        {"realized_pnl", cd->realized_pnl},
+                        {"unrealized_pnl", unreal_exec}
                     };
                     ws->send(exec.dump());
                     break;
@@ -400,11 +424,18 @@ int main() {
         }
 
         scheduleBroadcast();
+        // Broadcast multi-agent PnL snapshot
+        try {
+            json push = { {"type","all_pnl_push"}, {"clients", buildAllPnL()} };
+            std::string s = push.dump();
+            for (auto* ws : connected_clients) ws->send(s);
+        } catch (...) { LOG("all_pnl_push broadcast error"); }
     };
     app.ws<ClientData>("/*", {
         // Handle new client connection
         .open = [](auto* ws) {
             ws->getUserData()->authenticated = false;
+            ws->getUserData()->client_id = next_client_id.fetch_add(1);
             ws->send(R"({"type":"welcome","message":"Please authenticate"})");
             connected_clients.insert(ws);
             LOG("Client connected");
@@ -417,10 +448,17 @@ int main() {
                 std::string type = j.value("type", "");
                 json response;
         bool triggerBroadcast = false;
+        // Correlation id support: echo back any unsigned integer 'corr' provided in request
+        uint64_t corr = 0; bool hasCorr = false;
+        try {
+            if (j.contains("corr") && j["corr"].is_number_unsigned()) { corr = j["corr"]; hasCorr = true; }
+        } catch (...) { /* ignore corr extraction issues */ }
 
                 // Authentication check
                 if (!ws->getUserData()->authenticated && type != "auth") {
-                    ws->send(R"({"type":"error","message":"Not authenticated"})");
+                    response = {{"type","error"},{"message","Not authenticated"}};
+                    if (hasCorr) response["corr"] = corr;
+                    ws->send(response.dump());
                     return;
                 }
 
@@ -560,15 +598,40 @@ int main() {
                         response["trades"].push_back({{"buy_order_id", t.buy_order_id}, {"sell_order_id", t.sell_order_id}, {"price", t.price}, {"quantity", t.quantity}, {"timestamp", t.timestamp}});
                     }
                 } else if (type == "getRealizedPnL") {
-                    response = {
-                        {"type", "realized_pnl_response"},
-                        {"pnl", ws->getUserData()->realized_pnl}
-                    };
+                    auto* cd = ws->getUserData();
+                    auto &bucket = pnlRate[cd];
+                    auto now = std::chrono::steady_clock::now();
+                    if (bucket.count == 0) bucket.windowStart = now;
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - bucket.windowStart).count();
+                    if (elapsed > 1000) { bucket.windowStart = now; bucket.count = 0; }
+                    if (++bucket.count > 5) {
+                        response = {{"type","error"},{"message","PnL rate limit"}};
+                    } else {
+                        response = {
+                            {"type", "realized_pnl_response"},
+                            {"pnl", cd->realized_pnl}
+                        };
+                    }
                 } else if (type == "getUnrealizedPnL") {
-                    double pnl = getUnrealizedPnL(ws->getUserData());
+                    auto* cd = ws->getUserData();
+                    auto &bucket = pnlRate[cd];
+                    auto now = std::chrono::steady_clock::now();
+                    if (bucket.count == 0) bucket.windowStart = now;
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - bucket.windowStart).count();
+                    if (elapsed > 1000) { bucket.windowStart = now; bucket.count = 0; }
+                    if (++bucket.count > 5) {
+                        response = {{"type","error"},{"message","PnL rate limit"}};
+                    } else {
+                        double pnl = getUnrealizedPnL(cd);
+                        response = {
+                            {"type", "unrealized_pnl_response"},
+                            {"pnl", pnl}
+                        };
+                    }
+                } else if (type == "getAllPnL") {
                     response = {
-                        {"type", "unrealized_pnl_response"},
-                        {"pnl", pnl}
+                        {"type", "all_pnl_response"},
+                        {"clients", buildAllPnL()}
                     };
                 } else if (type == "getOpenOrdersCount") {
                     size_t count = getOpenOrdersCount(ws->getUserData());
@@ -581,6 +644,11 @@ int main() {
                         {"type", "error"},
                         {"message", "Unknown request type"}
                     };
+                }
+                if (hasCorr) {
+                    // Only tag responses that are direct replies (not broadcasts)
+                    // All responses built above qualify here
+                    response["corr"] = corr;
                 }
                 ws->send(response.dump());
                 if (triggerBroadcast) {
@@ -598,6 +666,7 @@ int main() {
             for (auto id : ws->getUserData()->my_orders) {
                 order_to_client.erase(id);
             }
+            pnlRate.erase(ws->getUserData());
             connected_clients.erase(ws);
             LOG("Client disconnected");
         }
